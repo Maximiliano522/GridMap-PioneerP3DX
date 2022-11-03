@@ -17,7 +17,7 @@ Kv = 0.2 # 1    0.3
 Kh = 0.3 # 2.5  0.5
 
 #Tiempo
-END = 150
+END = 200
 
 MAPZISE = 100
 
