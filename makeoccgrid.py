@@ -193,6 +193,6 @@ print (occgrid)
 finalt = time.time()
 print('Avg time per iteration ', (finalt-initt)/niter)
 
-plt.imshow(tocc+occgrid, cmap='gray', vmin=0, vmax=255)
+plt.imshow(tocc+occgrid, cmap='gray')
 plt.show()
 np.savetxt('map.txt', tocc+occgrid)

@@ -1,6 +1,5 @@
 
 from __future__ import print_function
-from tkinter import Y
 import sim     
 import time
 import math
@@ -17,12 +16,14 @@ Kv = 0.2 # 1    0.3
 Kh = 0.3 # 2.5  0.5
 
 #Tiempo
-END = 200
+END = 120
 
 MAPZISE = 100
 
+SizeG = 0.1
+
 """ Seleccion de trayectoria """
-#xarr, yarr, xorg, yorg = Traject.Random()     # T = 300 - 600
+xarr, yarr, xorg, yorg = Traject.Random()     # T = 300 - 600
 #xarr, yarr = Traject.square()                # T = 80
 #xarr, yarr = Traject.SQUARE()                # T = 350
 #xarr, yarr = Traject.Diagonal()              # T = 50
@@ -55,26 +56,30 @@ class Robot():
         ret, carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
         ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
 
-        if os.path.exists('map.txt'):
-            print('Map found. Loading...')
-            self.occgrid = np.loadtxt('map.txt')
-            self.tocc = 1.0*(self.occgrid > 0.5)
-            self.occgrid[self.occgrid > 0.5] = 0
-        else:
-            print('Creating new map')
-        # x, y = Robot.position()
-            self.occgrid = 0.5*np.ones((MAPZISE,MAPZISE))
-            self.tocc = np.zeros((MAPZISE,MAPZISE))
-
         self.CXo = int(MAPZISE/2)
         self.CYo = int(MAPZISE/2)
-        
-        self.IncX = 0
-        self.IterIX = 0
-        self.IncY = 0
-        self.IterIY = 0
 
-       
+        if os.path.exists('Mapa.npz'):
+            print('Mapa encontrado. Cargando...')
+            MAPA = np.load('Mapa.npz')
+            self.occgrid = MAPA['occgrid']
+            self.tocc = MAPA['tocc']
+            ConfigR = MAPA['Conf']
+            
+            self.IncX = int(ConfigR[0])
+            self.IncY = int(ConfigR[1])
+            self.IterIX = int(ConfigR[2])
+            self.IterIY = int(ConfigR[3])
+            self.SizeGrid = ConfigR[4]          
+        else:
+            print('Creando nuevo Mapa...')
+            self.occgrid = 0.5*np.ones((MAPZISE,MAPZISE))
+            self.tocc = np.zeros((MAPZISE,MAPZISE))
+            self.SizeGrid = SizeG
+            self.IncX = 0
+            self.IterIX = 0
+            self.IncY = 0
+            self.IterIY = 0
 
     def getDistanceReading(self, i):
         # Obtenemos la lectura del sensor
@@ -90,20 +95,20 @@ class Robot():
     def getSensorReading(self, i):
         # Obtenemos la lectura del sensor
         err, State, Point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
+        ret, srot = sim.simxGetObjectQuaternion(clientID, self.usensor[i], -1, sim.simx_opmode_blocking)
 
-        return err, State, np.linalg.norm(Point), detectedObj, detectedSurfNormVec
-
-    def PositionTrayectory (self):
-        ret, carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
-        ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
-        return carpos, carrot, ret
+        return State, Point, srot, np.linalg.norm(Point)
 
     def Position (self):
         ret, carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
         ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
         xw = carpos[0]
         yw = carpos[1]
-        return xw, yw
+        return xw, yw, carpos, carrot
+    
+    def Velocity(self, ul, ur):
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, ul, sim.simx_opmode_blocking)
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, ur, sim.simx_opmode_blocking)
 
     def stop(self):
         err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, 0, sim.simx_opmode_blocking)
@@ -141,15 +146,6 @@ class Robot():
             j_prime += 1
         return new_map
 
-    def world_to_grid(self, point):
-        grid_center_coordinates = (MAPZISE/2, MAPZISE/2)
-        scaling_factor = MAPZISE/2
-        delta_x = (point[0]/15.0) * scaling_factor
-        delta_y = (point[1]/15.0) * scaling_factor
-        grid_coordinates = None
-        grid_coordinates = (int(round(grid_center_coordinates[0]+delta_x)), int(round(grid_center_coordinates[1]-delta_y)))
-        return grid_coordinates
-
     def interp(self, tiempo):
 
 
@@ -176,7 +172,7 @@ class Robot():
 
         ts = time.time()
 
-        carpos, carrot = self.PositionTrayectory() 
+        x, y, carpos, carrot = self.Position() 
 
         tau = ts - t
 
@@ -197,16 +193,14 @@ class Robot():
         xt.append(carpos[0])
         yt.append(carpos[1])
 
-
-        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, ul, sim.simx_opmode_blocking)
-        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, ur, sim.simx_opmode_blocking)
+        self.Velocity(ul,ur)
         
     def Braitenberg (self):
-        
-        carpos = self.Position() 
+
+        xw, yw, carpos, carrot = self.Position()
 
         for i in range (16):
-            dist = self.getDistanceReading(i) 
+            dist = self.getDistanceReading(i)
             if dist<noDetectionDist:
                 if dist<maxDetectionDist:
                     dist=maxDetectionDist
@@ -226,13 +220,72 @@ class Robot():
 
         return vLeft, vRight
 
-    def Mapeo(self):
-        
-        iter = 0
-        xw, yw = self.Position()
+    def LineS(self, xr, yr, row, col, i):
 
-        xr = self.CXo + m.ceil(xw/0.1) + self.IncX
-        yr = self.CYo - m.floor(yw/0.1)  + self.IncY
+        state, point, srot, dist = self.getSensorReading(i)
+        x, y, spos, carrot = self.Position()
+        R = self.q2R(srot[0], srot[1], srot[2], srot[3])
+        spos = np.array(spos).reshape((3,1))
+
+        if state == True:
+
+            opos = np.array(point).reshape((3,1))
+                
+            pobs = np.matmul(R, opos) + spos
+            xs = pobs[0]
+            ys = pobs[1]
+            xo = self.CXo + m.ceil(xs/self.SizeGrid) + self.IncX
+            yo = self.CXo - m.floor(ys/self.SizeGrid) + self.IncY
+            if xo >= col:
+                xo = xr
+                yo = yr
+            elif xo <= 0:
+                xo = xr
+                yo = yr 
+            if yo >= row:
+                yo = yr
+                xo = xr
+            elif yo <=0:
+                xo = xr
+                yo = yr
+                
+            rows, cols = line(yr-1, xr-1, yo-1, xo-1)
+            self.occgrid[rows, cols] = 0
+            self.tocc[yo-1, xo-1] = 1
+
+        else:
+
+            opos = np.array([0,0,2.5]).reshape((3,1))
+
+            pobs = np.matmul(R, opos) + spos
+            xs = pobs[0]
+            ys = pobs[1]
+                
+            xo = self.CXo + m.ceil(xs/self.SizeGrid) + self.IncX
+            yo = self.CYo - m.floor(ys/self.SizeGrid) + self.IncY
+
+            if xo >= col:
+                xo = xr
+                yo = yr
+            elif xo <= 0:
+                xo = xr
+                yo = yr 
+            if yo >= row:
+                yo = yr
+                xo = xr
+            elif yo <=0:
+                xo = xr
+                yo = yr
+
+            rows, cols = line(yr-1, xr-1, yo-1, xo-1)  
+            self.occgrid[rows, cols] = 0
+
+    def Mapeo(self):
+    
+        xw, yw, carpos, carrot = self.Position()
+
+        xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
+        yr = self.CYo - m.floor(yw/self.SizeGrid)  + self.IncY 
 
         row, col = self.occgrid.shape       
 
@@ -241,9 +294,7 @@ class Robot():
             for i in range(MAPZISE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=1)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 1)
-            xw, yw = self.Position()
-            xr = self.CXo + m.ceil(xw/0.1) + self.IncX
-            yr = self.CYo - m.floor(yw/0.1) + self.IncY
+            xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
         elif xr <= 0:
             print('Agregando columnas al inicio')
             for i in range(MAPZISE):
@@ -251,20 +302,14 @@ class Robot():
                 self.tocc = np.insert(self.tocc, 0, 0, axis = 1)
             self.IterIX = self.IterIX + 1
             self.IncX = self.IterIX * MAPZISE
-            xw, yw = self.Position()
-            xr = self.CXo + m.ceil(xw/0.1) + self.IncX
-            yr = self.CYo - m.floor(yw/0.1) + self.IncY
+            xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
             
         if yr >= row:
             print('Insertando filas al final')
             for i in range(MAPZISE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=0)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 0)
-            xw, yw = self.Position()
-            xr = self.CXo + m.ceil(xw/0.1) + self.IncX
-            yr = self.CYo - m.floor(yw/0.1) + self.IncY
-            
-            #print("\n",xr, "\n", yr)
+            yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
         elif yr <= 0:
             print('Insertando filas al inicio')
             for i in range(MAPZISE):
@@ -272,111 +317,31 @@ class Robot():
                 self.tocc = np.insert(self.tocc, 0, 0, axis = 0)
             self.IterIY = self.IterIY + 1
             self.IncY = self.IterIY * MAPZISE
-            xw, yw = self.Position()
-            xr = self.CXo + m.ceil(xw/0.1) + self.IncX
-            yr = self.CYo - m.floor(yw/0.1) + self.IncY
+            yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
             
         row, col = self.occgrid.shape
         
         self.occgrid[yr-1, xr-1] = 0
 
-        uread = []
-        ustate = []
-        upt = []
-
+        for i in range(16):
+            self.LineS(xr,yr,row,col, i)
         
-
-        for i in range(0,16):
-            err, state, point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
-            ret, objpos = sim.simxGetObjectPosition(clientID, detectedObj, -1, sim.simx_opmode_blocking)
-            uread.append(np.linalg.norm(point))
-            upt.append(point)
-            ustate.append(state)
-            ret, srot = sim.simxGetObjectQuaternion(clientID, self.usensor[i], -1, sim.simx_opmode_blocking)
-            ret, spos = sim.simxGetObjectPosition(clientID, self.usensor[i], -1, sim.simx_opmode_blocking)
-            R = self.q2R(srot[0], srot[1], srot[2], srot[3])
-            spos = np.array(spos).reshape((3,1))
-
-            iter = iter +1
-
-            if state == True:
-
-                opos = np.array(point).reshape((3,1))
-                
-                pobs = np.matmul(R, opos) + spos
-                xs = pobs[0]
-                ys = pobs[1]
-                xo = self.CXo + m.ceil(xs/0.1) + self.IncX
-                yo = self.CXo - m.floor(ys/0.1) + self.IncY
-                if xo >= col:
-                    xo = xr
-                    yo = yr
-                elif xo <= 0:
-                    xo = xr
-                    yo = yr 
-                if yo >= row:
-                    yo = yr
-                    xo = xr
-                elif yo <=0:
-                    xo = xr
-                    yo = yr
-                
-                rows3, cols3 = line(yr-1, xr-1, yo-1, xo-1)
-                #cols3 = cols3 - iter 
-                #rows3 = rows3 - iter
-                self.occgrid[rows3, cols3] = 0
-                self.tocc[yo-1, xo-1] = 1
-
-            else:
-
-                opos = np.array([0,0,1]).reshape((3,1))
-
-                pobs = np.matmul(R, opos) + spos
-                xs = pobs[0]
-                ys = pobs[1]
-                
-                xo = self.CXo + m.ceil(xs/0.1) + self.IncX
-                yo = self.CYo - m.floor(ys/0.1) + self.IncY
-
-                if xo >= col:
-                    xo = xr
-                    yo = yr
-                if xo <= 0:
-                    xo = xr
-                    yo = yr 
-                if yo >= row:
-                    yo = yr
-                    xo = xr
-                if yo <=0:
-                    xo = xr
-                    yo = yr
-
-                rows3, cols3 = line(yr-1, xr-1, yo-1, xo-1)
-            
-                #cols3 = cols3 - iter 
-                
-                #rows3 = rows3 - iter
-                
-                self.occgrid[rows3, cols3] = 0
-                
         ul = 2.0
         ur = 2.0
 
-        for i in range (16):
-            if (self.getDistanceReading(i) <= 2.5):
+        for i in range(16):
+            if self.getDistanceReading(i) < 2.5:
                 ul, ur = self.Braitenberg()
 
-
-        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, ul, sim.simx_opmode_blocking)
-        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, ur, sim.simx_opmode_blocking)
-
+        self.Velocity(ul,ur)
+       
     def Finaly(self):
         plt.imshow(self.tocc+self.occgrid, cmap='gray')
         plt.show()
-        #np.savetxt('map.txt', self.tocc+self.occgrid)
+        Config = [int(self.IncX),int(self.IncY),int(self.IterIX),int(self.IterIY),(self.SizeGrid)]
+        np.savez('Mapa', tocc = self.tocc, occgrid = self.occgrid, Conf = Config)
 
     
-
 print ('Programa Iniciado')
 sim.simxFinish(-1)
 clientID=sim.simxStart('127.0.0.1',-1,True,True,5000,5)  # Conexión a CoppeliaSim
@@ -399,10 +364,11 @@ if clientID!=-1:
     yt = []
 
     ttime =  END
- 
+    tarr = np.linspace(0, ttime, xarr.shape[0])
+    pcix = spi.PchipInterpolator(tarr, xarr) 
+    pciy = spi.PchipInterpolator(tarr, yarr)
 
     t = time.time()
-    
 
     #                                        """ Ciclo de trabajo"""""
 
