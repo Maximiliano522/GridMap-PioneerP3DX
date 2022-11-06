@@ -16,7 +16,7 @@ Kv = 0.2 # 1    0.3
 Kh = 0.3 # 2.5  0.5
 
 #Tiempo
-END = 20
+END = 60
 
 MAPSIZE = 50
 
@@ -328,10 +328,9 @@ class Robot():
     def Finaly(self):
         plt.imshow(self.tocc+self.occgrid, cmap='gray')
         plt.show()
-        Config = [int(self.IncX),int(self.IncY),(self.SizeGrid),self.MAPSIZE]
+        Config = [self.IncX,self.IncY,self.SizeGrid,self.MAPSIZE]
         np.savez('Mapa', tocc = self.tocc, occgrid = self.occgrid, Conf = Config)
 
-    
 print ('Programa Iniciado')
 sim.simxFinish(-1)
 clientID=sim.simxStart('127.0.0.1',-1,True,True,5000,5)  # Conexión a CoppeliaSim
