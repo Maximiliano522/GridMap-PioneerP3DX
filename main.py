@@ -16,9 +16,9 @@ Kv = 0.2 # 1    0.3
 Kh = 0.3 # 2.5  0.5
 
 #Tiempo
-END = 120
+END = 20
 
-MAPZISE = 100
+MAPSIZE = 50
 
 SizeG = 0.1
 
@@ -56,8 +56,6 @@ class Robot():
         ret, carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
         ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
 
-        self.CXo = int(MAPZISE/2)
-        self.CYo = int(MAPZISE/2)
 
         if os.path.exists('Mapa.npz'):
             print('Mapa encontrado. Cargando...')
@@ -68,18 +66,19 @@ class Robot():
             
             self.IncX = int(ConfigR[0])
             self.IncY = int(ConfigR[1])
-            self.IterIX = int(ConfigR[2])
-            self.IterIY = int(ConfigR[3])
-            self.SizeGrid = ConfigR[4]          
+            self.SizeGrid = ConfigR[2]
+            self.MAPSIZE = int(ConfigR[3])          
         else:
             print('Creando nuevo Mapa...')
-            self.occgrid = 0.5*np.ones((MAPZISE,MAPZISE))
-            self.tocc = np.zeros((MAPZISE,MAPZISE))
+            self.occgrid = 0.5*np.ones((MAPSIZE,MAPSIZE))
+            self.tocc = np.zeros((MAPSIZE,MAPSIZE))
             self.SizeGrid = SizeG
             self.IncX = 0
-            self.IterIX = 0
             self.IncY = 0
-            self.IterIY = 0
+            self.MAPSIZE = int(MAPSIZE)
+
+        self.CXo = int(self.MAPSIZE/2)
+        self.CYo = int(self.MAPSIZE/2)
 
     def getDistanceReading(self, i):
         # Obtenemos la lectura del sensor
@@ -236,17 +235,14 @@ class Robot():
             ys = pobs[1]
             xo = self.CXo + m.ceil(xs/self.SizeGrid) + self.IncX
             yo = self.CXo - m.floor(ys/self.SizeGrid) + self.IncY
+
             if xo >= col:
                 xo = xr
-                yo = yr
             elif xo <= 0:
                 xo = xr
-                yo = yr 
             if yo >= row:
                 yo = yr
-                xo = xr
             elif yo <=0:
-                xo = xr
                 yo = yr
                 
             rows, cols = line(yr-1, xr-1, yo-1, xo-1)
@@ -266,15 +262,11 @@ class Robot():
 
             if xo >= col:
                 xo = xr
-                yo = yr
             elif xo <= 0:
                 xo = xr
-                yo = yr 
             if yo >= row:
                 yo = yr
-                xo = xr
             elif yo <=0:
-                xo = xr
                 yo = yr
 
             rows, cols = line(yr-1, xr-1, yo-1, xo-1)  
@@ -291,32 +283,30 @@ class Robot():
 
         if xr >= col:
             print('Agregando columnas al final')
-            for i in range(MAPZISE):
+            for i in range(self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=1)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 1)
             xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
         elif xr <= 0:
             print('Agregando columnas al inicio')
-            for i in range(MAPZISE):
+            for i in range(self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, 0, .5, axis=1)
                 self.tocc = np.insert(self.tocc, 0, 0, axis = 1)
-            self.IterIX = self.IterIX + 1
-            self.IncX = self.IterIX * MAPZISE
+            self.IncX = self.IncX + self.MAPSIZE
             xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
             
         if yr >= row:
             print('Insertando filas al final')
-            for i in range(MAPZISE):
+            for i in range (self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=0)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 0)
             yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
         elif yr <= 0:
             print('Insertando filas al inicio')
-            for i in range(MAPZISE):
+            for i in range(self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, 0, .5, axis=0)
                 self.tocc = np.insert(self.tocc, 0, 0, axis = 0)
-            self.IterIY = self.IterIY + 1
-            self.IncY = self.IterIY * MAPZISE
+            self.IncY = self.IncY + self.MAPSIZE
             yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
             
         row, col = self.occgrid.shape
@@ -338,7 +328,7 @@ class Robot():
     def Finaly(self):
         plt.imshow(self.tocc+self.occgrid, cmap='gray')
         plt.show()
-        Config = [int(self.IncX),int(self.IncY),int(self.IterIX),int(self.IterIY),(self.SizeGrid)]
+        Config = [int(self.IncX),int(self.IncY),(self.SizeGrid),self.MAPSIZE]
         np.savez('Mapa', tocc = self.tocc, occgrid = self.occgrid, Conf = Config)
 
     
