@@ -11,17 +11,17 @@ import trajectory as Traject
 from skimage.draw import line
 import matplotlib.pyplot as plt
 import os
+import random as rnd
 
-#                """ Configuracion Inicial """
+Kv = 0.2 # 1    0.3
+Kh = 0.3 # 2.5  0.5
 
-Kv = 0.2                                   # Constantes de aceleración
-Kh = 0.3
-                                            
-END = 60                                   # TIEMPO
-                                            
-MAPSIZE = 50                               # Tamaño de Mapa inicial
-                                            
-SizeG = 0.1                                # Tamaño de celda
+#Tiempo
+END = 240
+
+MAPZISE = 100
+
+SizeG = 0.1
 
 """ Seleccion de trayectoria """
 xarr, yarr, xorg, yorg = Traject.Random()     # T = 300 - 600
@@ -32,6 +32,11 @@ xarr, yarr, xorg, yorg = Traject.Random()     # T = 300 - 600
 
 # Imprimimos la trayectoria a seguir
 #Traject.Grafica(xarr, yarr, xorg, yorg)
+
+def v2u(v, omega, r, L):
+    ur = (v/r) + (L*omega/(2*r))
+    ul = (v/r) - (L*omega/(2*r))
+    return ur, ul
 
 class Robot():
 
@@ -57,29 +62,30 @@ class Robot():
         ret, carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
         ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
 
+        self.CXo = int(MAPZISE/2)
+        self.CYo = int(MAPZISE/2)
 
         if os.path.exists('Mapa.npz'):
             print('Mapa encontrado. Cargando...')
             MAPA = np.load('Mapa.npz')
-            self.occgrid = MAPA['occgrid']                  # Cargamos la matriz con los valores de las celdas vacias
-            self.tocc = MAPA['tocc']                        # Cargamos la matriz con los valores de las celdas ocupadas
+            self.occgrid = MAPA['occgrid']
+            self.tocc = MAPA['tocc']
             ConfigR = MAPA['Conf']
             
-            self.IncX = int(ConfigR[0])                     # Cargamos el incremento en X para la transformación de coordenadas
-            self.IncY = int(ConfigR[1])                     # Cargamos el incremento en y para la transformacion de coordenadas
-            self.SizeGrid = ConfigR[2]                      # Cargamos el tamaño de rejilla preestablecido en el mapa
-            self.MAPSIZE = int(ConfigR[3])                  # Cargamos el tamaño del mapa original
+            self.IncX = int(ConfigR[0])
+            self.IncY = int(ConfigR[1])
+            self.IterIX = int(ConfigR[2])
+            self.IterIY = int(ConfigR[3])
+            self.SizeGrid = ConfigR[4]          
         else:
             print('Creando nuevo Mapa...')
-            self.occgrid = 0.5*np.ones((MAPSIZE,MAPSIZE))   # Creamos una matriz con valores de casilla sin explorar
-            self.tocc = np.zeros((MAPSIZE,MAPSIZE))         # Creamos una matriz dónde guardaremos las celdas ocupadas
+            self.occgrid = 0.5*np.ones((MAPZISE,MAPZISE))
+            self.tocc = np.zeros((MAPZISE,MAPZISE))
             self.SizeGrid = SizeG
-            self.IncX = 0                                   # Establecemos los valores iniciales por default
+            self.IncX = 0
+            self.IterIX = 0
             self.IncY = 0
-            self.MAPSIZE = int(MAPSIZE)
-
-        self.CXo = int(self.MAPSIZE/2)                       # Centro original en x
-        self.CYo = int(self.MAPSIZE/2)                       # Centro original en Y
+            self.IterIY = 0
 
     def getDistanceReading(self, i):
         # Obtenemos la lectura del sensor
@@ -222,7 +228,7 @@ class Robot():
 
     def LineS(self, xr, yr, row, col, i):
 
-        state, point, srot, dist = self.getSensorReading(i)     
+        state, point, srot, dist = self.getSensorReading(i)
         x, y, spos, carrot = self.Position()
         R = self.q2R(srot[0], srot[1], srot[2], srot[3])
         spos = np.array(spos).reshape((3,1))
@@ -236,14 +242,17 @@ class Robot():
             ys = pobs[1]
             xo = self.CXo + m.ceil(xs/self.SizeGrid) + self.IncX
             yo = self.CXo - m.floor(ys/self.SizeGrid) + self.IncY
-
             if xo >= col:
                 xo = xr
+                yo = yr
             elif xo <= 0:
                 xo = xr
+                yo = yr 
             if yo >= row:
                 yo = yr
+                xo = xr
             elif yo <=0:
+                xo = xr
                 yo = yr
                 
             rows, cols = line(yr-1, xr-1, yo-1, xo-1)
@@ -263,11 +272,15 @@ class Robot():
 
             if xo >= col:
                 xo = xr
+                yo = yr
             elif xo <= 0:
                 xo = xr
+                yo = yr 
             if yo >= row:
                 yo = yr
+                xo = xr
             elif yo <=0:
+                xo = xr
                 yo = yr
 
             rows, cols = line(yr-1, xr-1, yo-1, xo-1)  
@@ -277,48 +290,53 @@ class Robot():
     
         xw, yw, carpos, carrot = self.Position()
 
-        xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX           # Obtenemos la posicion en X de nuestro robot de acuerdo al marco global
-        yr = self.CYo - m.floor(yw/self.SizeGrid)  + self.IncY         # Obtenemos la posicion en y de nuestro robot de acuerdo al marco global
+        xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
+        yr = self.CYo - m.floor(yw/self.SizeGrid)  + self.IncY 
 
-        row, col = self.occgrid.shape                                  # Contamos el maximo de columnas y filas con el que disponemos
+        row, col = self.occgrid.shape       
 
-        if xr >= col:                                                  # Comprobamos si la posicion en X postiva se puede graficar en nuestra matriz
-            print('Agregando columnas al final')                       # En caso de ser cierta la comprobacion, agregamos columnas al final de nuestras matrices 
-            for i in range(self.MAPSIZE):
+        if xr >= col:
+            print('Agregando columnas al final')
+            for i in range(MAPZISE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=1)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 1)
-            #xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
-        elif xr <= 0:                                                  # Comprobamos si la posicion en X es negativa y por lo tanto saldria de los limites de nuestra matriz
-            print('Agregando columnas al inicio')                      # En caso de ser cierta la comprobacion, agregamos columnas al inicio de nuestras matrices 
-            for i in range(self.MAPSIZE):
+            xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
+        elif xr <= 0:
+            print('Agregando columnas al inicio')
+            for i in range(MAPZISE):
                 self.occgrid = np.insert(self.occgrid, 0, .5, axis=1)
                 self.tocc = np.insert(self.tocc, 0, 0, axis = 1)
-            self.IncX = self.IncX + self.MAPSIZE                       # En este caso estaremos guardando el incremento en X para mantener nuestro marco global
-            xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX       # Volvemos a obtener las cordenadaS en X en nuestro nuevo marco global ampliado
+            self.IterIX = self.IterIX + 1
+            self.IncX = self.IterIX * MAPZISE
+            xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
             
-        if yr >= row:                                                  # Comprobamos si la posicion en Y postiva se puede graficar en nuestra matriz
-            print('Insertando filas al final')                         # En caso de ser cierta la comprobacion, agregamos filas al final de nuestras matrices
-            for i in range (self.MAPSIZE):
+        if yr >= row:
+            print('Insertando filas al final')
+            for i in range(MAPZISE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=0)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 0)
-            #yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
-        elif yr <= 0:                                                  # Comprobamos si la posicion en Y es negativa y por lo tanto saldria de los limites de nuestra matriz
+            yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
+        elif yr <= 0:
             print('Insertando filas al inicio')
-            for i in range(self.MAPSIZE):
+            for i in range(MAPZISE):
                 self.occgrid = np.insert(self.occgrid, 0, .5, axis=0)
                 self.tocc = np.insert(self.tocc, 0, 0, axis = 0)
-            self.IncY = self.IncY + self.MAPSIZE                       # En este caso estaremos guardando el incremento en Y para mantener nuestro marco global
-            yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY      # Volvemos a obtener las cordenadaS en X en nuestro nuevo marco global ampliado
+            self.IterIY = self.IterIY + 1
+            self.IncY = self.IterIY * MAPZISE
+            yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
             
-        self.occgrid[yr-1, xr-1] = 0                                   # Mandamos los valores donde se encuentra el robot como celdas ocupadas
+        row, col = self.occgrid.shape
+        
+        self.occgrid[yr-1, xr-1] = 0
 
-        row, col = self.occgrid.shape                                  # Volvemos a leer el tamaños de nuestras matrices por si hubo cambios y enviarlos a nuestra funcion Line Sensors
-
-        for i in range(16):                                            # En un rango de 15 sensores graficamos lo que detecta cada uno de ellos
+        for i in range(16):
             self.LineS(xr,yr,row,col, i)
         
-        ul = 2.0
-        ur = 2.0
+        #ul = 2.0
+        # ur = 1.0*espiral[cont]
+        
+        ur = UR
+        ul = UL
 
         for i in range(16):
             if self.getDistanceReading(i) < 2.5:
@@ -329,9 +347,10 @@ class Robot():
     def Finaly(self):
         plt.imshow(self.tocc+self.occgrid, cmap='gray')
         plt.show()
-        Config = [self.IncX,self.IncY,self.SizeGrid,self.MAPSIZE]
+        Config = [int(self.IncX),int(self.IncY),int(self.IterIX),int(self.IterIY),(self.SizeGrid)]
         np.savez('Mapa', tocc = self.tocc, occgrid = self.occgrid, Conf = Config)
 
+    
 print ('Programa Iniciado')
 sim.simxFinish(-1)
 clientID=sim.simxStart('127.0.0.1',-1,True,True,5000,5)  # Conexión a CoppeliaSim
@@ -350,23 +369,35 @@ if clientID!=-1:
     braitenbergL=[-0.2,-0.4,-0.6,-0.8,-1,-1.2,-1.4,-1.6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
     braitenbergR=[-1.6,-1.4,-1.2,-1,-0.8,-0.6,-0.4,-0.2, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
 
+   
     xt = []
     yt = []
-
+    # cont = 0
+    v = 1
+    teta = np.pi/6
     ttime =  END
     tarr = np.linspace(0, ttime, xarr.shape[0])
     pcix = spi.PchipInterpolator(tarr, xarr) 
     pciy = spi.PchipInterpolator(tarr, yarr)
-
+    ang = rnd.randint(6, 12)
     t = time.time()
-
+    s = 5
     #                                        """ Ciclo de trabajo"""""
-
+    cont = np.random.randint(0, 50,)
     while (time.time()-t) < END:
 
-         
-        robot.Mapeo()                              
-        
+        UR, UL = v2u(v, teta, r, L)
+        UR /= 2.1
+        UL /= 2.1
+        robot.Mapeo()       
+        if time.time()-t >= s: 
+            s += 5     
+            teta -= 0.01 
+        # if time.time()-t >= s:
+        #     s += 5
+        #     cont += 1
+        #     if cont >= 50:
+        #         cont = 0
                             
     robot.stop()                                         # Detenemos nuestro robot
     #Traject.GrafOut(xt,yt,xorg,yorg)                     # Imprimimos resultados
