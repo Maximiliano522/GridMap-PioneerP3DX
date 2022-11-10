@@ -14,21 +14,25 @@ import os
 
 #                """ Configuracion Inicial """
 
-Kv = 0.2                                   # Constantes de aceleración
-Kh = 0.3
+Kv = .2                                    # Constantes de aceleración
+Kh = .5
                                             
-END = 60                                   # TIEMPO
+END = 120                                  # TIEMPO
                                             
 MAPSIZE = 50                               # Tamaño de Mapa inicial
                                             
 SizeG = 0.1                                # Tamaño de celda
 
-""" Seleccion de trayectoria """
-xarr, yarr, xorg, yorg = Traject.Random()     # T = 300 - 600
+#                 """ Seleccion de trayectoria """
+
+#xarr, yarr, xorg, yorg = Traject.Random()    # T = 300 - 600
+#xarr, yarr, xorg, yorg = Traject.TZ()
 #xarr, yarr = Traject.square()                # T = 80
 #xarr, yarr = Traject.SQUARE()                # T = 350
 #xarr, yarr = Traject.Diagonal()              # T = 50
-
+#xorg, yorg = Traject.Diagonal()
+#xarr, yarr = Traject.squareORIGIN()
+#xorg, yorg = Traject.squareORIGIN()
 
 # Imprimimos la trayectoria a seguir
 #Traject.Grafica(xarr, yarr, xorg, yorg)
@@ -51,10 +55,10 @@ class Robot():
 
         # Inicializamos los sensores
         for i in range(16):
-           err, state, point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_streaming)
+           err, self.state, point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_streaming)
 
         # Inicialización de posición
-        ret, carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
+        ret, self.carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
         ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
 
 
@@ -64,11 +68,13 @@ class Robot():
             self.occgrid = MAPA['occgrid']                  # Cargamos la matriz con los valores de las celdas vacias
             self.tocc = MAPA['tocc']                        # Cargamos la matriz con los valores de las celdas ocupadas
             ConfigR = MAPA['Conf']
+
             
             self.IncX = int(ConfigR[0])                     # Cargamos el incremento en X para la transformación de coordenadas
             self.IncY = int(ConfigR[1])                     # Cargamos el incremento en y para la transformacion de coordenadas
             self.SizeGrid = ConfigR[2]                      # Cargamos el tamaño de rejilla preestablecido en el mapa
             self.MAPSIZE = int(ConfigR[3])                  # Cargamos el tamaño del mapa original
+            
         else:
             print('Creando nuevo Mapa...')
             self.occgrid = 0.5*np.ones((MAPSIZE,MAPSIZE))   # Creamos una matriz con valores de casilla sin explorar
@@ -78,14 +84,28 @@ class Robot():
             self.IncY = 0
             self.MAPSIZE = int(MAPSIZE)
 
+            """""
+            self.TimeTra = 0
+            self.Explore1 = False
+            self.Explore2 = False
+            self.Explore3 = False
+            self.Explore4 = False
+            self.Explore5 = False
+            self.Explore6 = False
+            self.Explore7 = False
+            self.Explore8 = False
+            self.AjusteTiempo = 0
+
+            """
+
         self.CXo = int(self.MAPSIZE/2)                       # Centro original en x
         self.CYo = int(self.MAPSIZE/2)                       # Centro original en Y
-
+ 
     def getDistanceReading(self, i):
         # Obtenemos la lectura del sensor
-        err, State, Point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
+        err, self.state, Point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
 
-        if State == 1:
+        if self.state == 1:
             # retornamos la magnitud del punto detectado
             return math.sqrt(sum(i**2 for i in Point))
         else:
@@ -94,21 +114,21 @@ class Robot():
 
     def getSensorReading(self, i):
         # Obtenemos la lectura del sensor
-        err, State, Point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
+        err, self.state, Point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
         ret, srot = sim.simxGetObjectQuaternion(clientID, self.usensor[i], -1, sim.simx_opmode_blocking)
 
-        return State, Point, srot, np.linalg.norm(Point)
+        return self.state, Point, srot, math.sqrt(sum(i**2 for i in Point)) #np.linalg.norm(Point)
 
     def Position (self):
-        ret, carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
+        ret, self.carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
         ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
-        xw = carpos[0]
-        yw = carpos[1]
-        return xw, yw, carpos, carrot
+        xw = self.carpos[0]
+        yw = self.carpos[1]
+        return xw, yw, self.carpos, carrot
     
-    def Velocity(self, ul, ur):
-        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, ul, sim.simx_opmode_blocking)
-        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, ur, sim.simx_opmode_blocking)
+    def Velocity(self, vLeft, vRight):
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, vLeft, sim.simx_opmode_blocking)
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, vRight, sim.simx_opmode_blocking)
 
     def stop(self):
         err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, 0, sim.simx_opmode_blocking)
@@ -146,7 +166,7 @@ class Robot():
             j_prime += 1
         return new_map
 
-    def interp(self, tiempo):
+    def interp(self, tiempo, pcix, pciy):
 
 
         """ Interpolador Pchip """"" 
@@ -168,36 +188,111 @@ class Robot():
 
         return {'x':xnew,'y':ynew}
 
-    def Trajectory(self):
+    def Follow(self, CorrX, CorrY):
+        
+        tarr = np.linspace(0, 1000, CorrX.shape[0])
+        ExpX = spi.PchipInterpolator(tarr, CorrX) 
+        ExpY = spi.PchipInterpolator(tarr, CorrY)
 
         ts = time.time()
 
-        x, y, carpos, carrot = self.Position() 
+        x, y, self.carpos, carrot = self.Position() 
 
         tau = ts - t
 
-        data = self.interp(tau)
+        data = self.interp(tau, ExpX, ExpY)
         xd = data['x']
         yd = data['y']
 
-        errp = m.sqrt((xd-carpos[0])**2 + (yd-carpos[1])**2)
-        angd = m.atan2(yd-carpos[1], xd-carpos[0])
+        errp = m.sqrt((xd-self.carpos[0])**2 + (yd-self.carpos[1])**2)
+        angd = m.atan2(yd-self.carpos[1], xd-self.carpos[0])
         errh = self.angdiff(carrot[2], angd)
 
         v = Kv*errp
         omega = Kh*errh
 
         ul = v/r - L*omega/(2*r)
+
         ur = v/r + L*omega/(2*r)
+    
+        """""
+        if ul > 20:
+            ul = ul - ((ul/100)*90)
+        if ur > 20:
+            ur = ur - ((ur/100)*90)
+        if ul > 10:
+            ul = ul - ((ul/100)*75)
+        if ur > 10:
+            ur = ur - ((ur/100)*75)
+        if ul > 8:
+            ul = ul - ((ul/100)*60)
+        if ur > 8:
+            ur = ur - ((ur/100)*60)
+        if ul > 5:
+            ul = ul - ((ul/100)*50)
+        """
 
-        xt.append(carpos[0])
-        yt.append(carpos[1])
+        xt.append(self.carpos[0])
+        yt.append(self.carpos[1])
 
-        self.Velocity(ul,ur)
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, ul, sim.simx_opmode_blocking)
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, ur, sim.simx_opmode_blocking)
+
+    def Trajectory(self):
+        
+        CorrX, CorrY = Traject.Espiral()
+
+        #Traject.Grafica(CorrX, CorrY)
+
+        self.Follow(CorrX,CorrY)
+
+        """""
+        if (time.time()-t) < 30 and self.Explore1 == False:
+            CorrX, CorrY = Traject.Exp1()
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+            print('Estado 1')
+        elif self.Explore1 == False: 
+            self.Explore1 = True
+            self.AjusteTiempo = self.AjusteTiempo + 70
+        elif (time.time()-t) < 60 and self.Explore2 == False:
+            CorrX, CorrY = Traject.ORG(self.carpos)
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+            print('Regresando')
+        elif (time.time()-t) < 90 and self.Explore2 == False:
+            CorrX, CorrY = Traject.Exp2()
+            #Traject.Grafica(CorrX, CorrY)
+            print('Estado 2')
+            self.Follow(CorrX,CorrY)
+        elif self.Explore2 == False:
+            self.Explore2 = True
+            self.AjusteTiempo = self.AjusteTiempo + 50
+        elif (time.time()-t) < 120 and self.Explore3 == False:
+            CorrX, CorrY = Traject.ORG(self.carpos)
+            #Traject.Grafica(CorrX, CorrY)
+            print('Regresando')
+            self.Follow(CorrX,CorrY)
+        elif (time.time()-t) < 150 and self.Explore3 == False:
+            CorrX, CorrY = Traject.Exp3()
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+            print('Estado 3')
+        elif self.Explore3 == False:
+            self.Explore3 = True
+        elif (time.time()-t) < 180 and self.Explore4 == False:
+            CorrX, CorrY = Traject.ORG(self.carpos)
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+        elif (time.time()-t) < 210 and self.Explore4 == False:
+            CorrX, CorrY = Traject.Exp4()
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+        """
         
     def Braitenberg (self):
 
-        xw, yw, carpos, carrot = self.Position()
+        xw, yw, self.carpos, carrot = self.Position()
 
         for i in range (16):
             dist = self.getDistanceReading(i)
@@ -215,19 +310,25 @@ class Robot():
             vLeft=vLeft+braitenbergL[i]*detect[i]
             vRight=vRight+braitenbergR[i]*detect[i]
         
-        xt.append(carpos[0])
-        yt.append(carpos[1])
+        xt.append(self.carpos[0])
+        yt.append(self.carpos[1])
 
-        return vLeft, vRight
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, vLeft, sim.simx_opmode_blocking)
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, vRight, sim.simx_opmode_blocking)
 
     def LineS(self, xr, yr, row, col, i):
 
-        state, point, srot, dist = self.getSensorReading(i)     
+        self.state, point, srot, dist = self.getSensorReading(i)     
         x, y, spos, carrot = self.Position()
         R = self.q2R(srot[0], srot[1], srot[2], srot[3])
         spos = np.array(spos).reshape((3,1))
+        #self.Dist.append(dist)
+        #self.State.append(self.state)
 
-        if state == True:
+        xt.append(spos[0])
+        yt.append(spos[1])
+
+        if self.state == True:
 
             opos = np.array(point).reshape((3,1))
                 
@@ -275,7 +376,7 @@ class Robot():
 
     def Mapeo(self):
     
-        xw, yw, carpos, carrot = self.Position()
+        xw, yw, self.carpos, carrot = self.Position()
 
         xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX           # Obtenemos la posicion en X de nuestro robot de acuerdo al marco global
         yr = self.CYo - m.floor(yw/self.SizeGrid)  + self.IncY         # Obtenemos la posicion en y de nuestro robot de acuerdo al marco global
@@ -287,7 +388,6 @@ class Robot():
             for i in range(self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=1)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 1)
-            #xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
         elif xr <= 0:                                                  # Comprobamos si la posicion en X es negativa y por lo tanto saldria de los limites de nuestra matriz
             print('Agregando columnas al inicio')                      # En caso de ser cierta la comprobacion, agregamos columnas al inicio de nuestras matrices 
             for i in range(self.MAPSIZE):
@@ -301,7 +401,6 @@ class Robot():
             for i in range (self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=0)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 0)
-            #yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
         elif yr <= 0:                                                  # Comprobamos si la posicion en Y es negativa y por lo tanto saldria de los limites de nuestra matriz
             print('Insertando filas al inicio')
             for i in range(self.MAPSIZE):
@@ -314,23 +413,40 @@ class Robot():
 
         row, col = self.occgrid.shape                                  # Volvemos a leer el tamaños de nuestras matrices por si hubo cambios y enviarlos a nuestra funcion Line Sensors
 
+        self.Dist = []
+        self.State = []
+
+        xt.append(self.carpos[0])
+        yt.append(self.carpos[1])
+
         for i in range(16):                                            # En un rango de 15 sensores graficamos lo que detecta cada uno de ellos
             self.LineS(xr,yr,row,col, i)
-        
+
+        """""
         ul = 2.0
         ur = 2.0
 
         for i in range(16):
-            if self.getDistanceReading(i) < 2.5:
-                ul, ur = self.Braitenberg()
+            if self.State[i]:
+                dist = self.getDistanceReading(i)
+                if dist<noDetectionDist:
+                    if dist<maxDetectionDist:
+                        dist=maxDetectionDist
+                    detect[i]=1-((dist-maxDetectionDist)/(noDetectionDist-maxDetectionDist))
+                else:
+                    detect[i]=0
+                    
+                ul=ul+braitenbergL[i]*detect[i]
+                ur=ur+braitenbergR[i]*detect[i]
 
         self.Velocity(ul,ur)
+        """""
        
     def Finaly(self):
         plt.imshow(self.tocc+self.occgrid, cmap='gray')
         plt.show()
-        Config = [self.IncX,self.IncY,self.SizeGrid,self.MAPSIZE]
-        np.savez('Mapa', tocc = self.tocc, occgrid = self.occgrid, Conf = Config)
+        Config = [self.IncX,self.IncY,self.SizeGrid,self.MAPSIZE]                   # Definimos nuestra matriz con las configuraciones a guardar
+        np.savez('Mapa', tocc = self.tocc, occgrid = self.occgrid, Conf = Config)   # Guardamos en un archivo ".npz" nuestras matrices
 
 print ('Programa Iniciado')
 sim.simxFinish(-1)
@@ -352,24 +468,28 @@ if clientID!=-1:
 
     xt = []
     yt = []
+    
 
     ttime =  END
-    tarr = np.linspace(0, ttime, xarr.shape[0])
-    pcix = spi.PchipInterpolator(tarr, xarr) 
-    pciy = spi.PchipInterpolator(tarr, yarr)
+
 
     t = time.time()
 
-    #                                        """ Ciclo de trabajo"""""
+    #                                        """ Ciclo de trabajo """
 
     while (time.time()-t) < END:
-
-         
-        robot.Mapeo()                              
-        
+        for i in range (8):
+            while robot.getDistanceReading(i) <= 1:       # Comprobamos si algun sensor detecta un objeto
+                robot.Braitenberg() 
+                robot.Mapeo()                             # Usamos la funcion Braitenberg para evadir objetos
+                print ("Evadiendo obstaculo")
+        robot.Trajectory()
+        #robot.Velocity(3,3)
+        robot.Mapeo()                                     # El robot seguira la trayectoria hasta encontrar un objeto
+        print ("Siguiendo Trayectoria") 
                             
-    robot.stop()                                         # Detenemos nuestro robot
-    #Traject.GrafOut(xt,yt,xorg,yorg)                     # Imprimimos resultados
+    robot.stop()                                          # Detenemos nuestro robot
+    Traject.GrafOut(xt,yt)                                # Imprimimos resultados
     robot.Finaly()
 
     
