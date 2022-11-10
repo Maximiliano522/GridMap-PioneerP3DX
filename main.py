@@ -372,18 +372,18 @@ if clientID!=-1:
    
     xt = []
     yt = []
-    # cont = 0
     v = 1
     teta = np.pi/6
     ttime =  END
     tarr = np.linspace(0, ttime, xarr.shape[0])
     pcix = spi.PchipInterpolator(tarr, xarr) 
     pciy = spi.PchipInterpolator(tarr, yarr)
-    ang = rnd.randint(6, 12)
+    
     t = time.time()
     s = 5
     #                                        """ Ciclo de trabajo"""""
-    cont = np.random.randint(0, 50,)
+    init = np.random.randint(80, 200)
+    v = init/100
     while (time.time()-t) < END:
 
         UR, UL = v2u(v, teta, r, L)
@@ -393,11 +393,7 @@ if clientID!=-1:
         if time.time()-t >= s: 
             s += 5     
             teta -= 0.01 
-        # if time.time()-t >= s:
-        #     s += 5
-        #     cont += 1
-        #     if cont >= 50:
-        #         cont = 0
+        
                             
     robot.stop()                                         # Detenemos nuestro robot
     #Traject.GrafOut(xt,yt,xorg,yorg)                     # Imprimimos resultados
