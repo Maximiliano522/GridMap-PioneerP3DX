@@ -9,6 +9,7 @@ import numpy as np
 import scipy.interpolate as spi
 import trajectory as Traject
 from skimage.draw import line
+from astarmod import getTrajectoryA
 import matplotlib.pyplot as plt
 import os
 
@@ -240,10 +241,27 @@ class Robot():
 
     def Trajectory(self):
         
-        CorrX, CorrY = Traject.Espiral()
+        print("Creando la trajectoria a seguir")
+        #Traject.Grafica(CorrX, CorrY) 
+        start = [0,0]
+        end = [6,6] 
 
-        #Traject.Grafica(CorrX, CorrY)
 
+        start[0] = self.CXo + m.ceil(start[0]/self.SizeGrid) + self.IncX
+        start[1] = self.CXo - m.floor(start[1]/self.SizeGrid) + self.IncY 
+        
+        end[0] = self.CXo + m.ceil(end[0]/self.SizeGrid) + self.IncX
+        end[1] = self.CXo - m.floor(end[1]/self.SizeGrid) + self.IncY 
+        
+        print(start)
+        print(end)
+        CorrX, CorrY = getTrajectoryA(self.tocc,self.occgrid,start,end) 
+        CorrX = np.array(CorrX)
+        CorrY = np.array(CorrY)
+       
+        
+        print(CorrX)
+        print(CorrY)
         self.Follow(CorrX,CorrY)
 
         """""
