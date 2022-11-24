@@ -9,34 +9,36 @@ import numpy as np
 import scipy.interpolate as spi
 import trajectory as Traject
 from skimage.draw import line
+from astarmod import getTrajectoryA
 import matplotlib.pyplot as plt
 import os
-import random as rnd
+import astarmod as ast
+import cv2
 
-Kv = 0.2 # 1    0.3
-Kh = 0.3 # 2.5  0.5
+#                """ Configuracion Inicial """
 
-#Tiempo
-END = 240
+Kv = .2                                    # Constantes de aceleración
+Kh = .5
+                                            
+END = 20                                  # TIEMPO
+                                            
+MAPSIZE = 50                               # Tamaño de Mapa inicial
+                                            
+SizeG = 0.1                                # Tamaño de celda
 
-MAPZISE = 100
+#                 """ Seleccion de trayectoria """
 
-SizeG = 0.1
-
-""" Seleccion de trayectoria """
-xarr, yarr, xorg, yorg = Traject.Random()     # T = 300 - 600
+#xarr, yarr, xorg, yorg = Traject.Random()    # T = 300 - 600
+#xarr, yarr, xorg, yorg = Traject.TZ()
 #xarr, yarr = Traject.square()                # T = 80
 #xarr, yarr = Traject.SQUARE()                # T = 350
 #xarr, yarr = Traject.Diagonal()              # T = 50
-
+#xorg, yorg = Traject.Diagonal()
+#xarr, yarr = Traject.squareORIGIN()
+#xorg, yorg = Traject.squareORIGIN()
 
 # Imprimimos la trayectoria a seguir
 #Traject.Grafica(xarr, yarr, xorg, yorg)
-
-def v2u(v, omega, r, L):
-    ur = (v/r) + (L*omega/(2*r))
-    ul = (v/r) - (L*omega/(2*r))
-    return ur, ul
 
 class Robot():
 
@@ -56,42 +58,60 @@ class Robot():
 
         # Inicializamos los sensores
         for i in range(16):
-           err, state, point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_streaming)
+           err, self.state, point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_streaming)
 
         # Inicialización de posición
-        ret, carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
+        ret, self.carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
         ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
 
-        self.CXo = int(MAPZISE/2)
-        self.CYo = int(MAPZISE/2)
 
-        if os.path.exists('Mapa.npz'):
-            print('Mapa encontrado. Cargando...')
-            MAPA = np.load('Mapa.npz')
-            self.occgrid = MAPA['occgrid']
-            self.tocc = MAPA['tocc']
-            ConfigR = MAPA['Conf']
+        # if os.path.exists('Mapa.npz'):
+        #     print('Mapa encontrado. Cargando...')
+        #     MAPA = np.load('Mapa.npz')
+        #     self.occgrid = MAPA['occgrid']                  # Cargamos la matriz con los valores de las celdas vacias
+        #     self.tocc = MAPA['tocc']                        # Cargamos la matriz con los valores de las celdas ocupadas
+        #     ConfigR = MAPA['Conf']
+
             
-            self.IncX = int(ConfigR[0])
-            self.IncY = int(ConfigR[1])
-            self.IterIX = int(ConfigR[2])
-            self.IterIY = int(ConfigR[3])
-            self.SizeGrid = ConfigR[4]          
-        else:
-            print('Creando nuevo Mapa...')
-            self.occgrid = 0.5*np.ones((MAPZISE,MAPZISE))
-            self.tocc = np.zeros((MAPZISE,MAPZISE))
-            self.SizeGrid = SizeG
-            self.IncX = 0
-            self.IterIX = 0
-            self.IncY = 0
-            self.IterIY = 0
+        #     self.IncX = int(ConfigR[0])                     # Cargamos el incremento en X para la transformación de coordenadas
+        #     self.IncY = int(ConfigR[1])                     # Cargamos el incremento en y para la transformacion de coordenadas
+        #     self.SizeGrid = ConfigR[2]                      # Cargamos el tamaño de rejilla preestablecido en el mapa
+        #     self.MAPSIZE = int(ConfigR[3])                  # Cargamos el tamaño del mapa original
+        
+        
+        # else:
+        #     print('Creando nuevo Mapa...')
+        #     self.occgrid = 0.5*np.ones((MAPSIZE,MAPSIZE))   # Creamos una matriz con valores de casilla sin explorar
+        #     self.tocc = np.zeros((MAPSIZE,MAPSIZE))         # Creamos una matriz dónde guardaremos las celdas ocupadas
+        #     self.SizeGrid = SizeG
+        #     self.IncX = 0                                   # Establecemos los valores iniciales por default
+        #     self.IncY = 0
+        #     self.MAPSIZE = int(MAPSIZE)
 
+        #     """""
+        #     self.TimeTra = 0
+        #     self.Explore1 = False
+        #     self.Explore2 = False
+        #     self.Explore3 = False
+        #     self.Explore4 = False
+        #     self.Explore5 = False
+        #     self.Explore6 = False
+        #     self.Explore7 = False
+        #     self.Explore8 = False
+        #     self.AjusteTiempo = 0
+
+        #     """
+        
+        
+        
+        # self.CXo = int(self.MAPSIZE/2)                       # Centro original en x
+        # self.CYo = int(self.MAPSIZE/2)                       # Centro original en Y
+ 
     def getDistanceReading(self, i):
         # Obtenemos la lectura del sensor
-        err, State, Point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
+        err, self.state, Point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
 
-        if State == 1:
+        if self.state == 1:
             # retornamos la magnitud del punto detectado
             return math.sqrt(sum(i**2 for i in Point))
         else:
@@ -100,21 +120,21 @@ class Robot():
 
     def getSensorReading(self, i):
         # Obtenemos la lectura del sensor
-        err, State, Point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
+        err, self.state, Point, detectedObj, detectedSurfNormVec = sim.simxReadProximitySensor(clientID, self.usensor[i], sim.simx_opmode_buffer)
         ret, srot = sim.simxGetObjectQuaternion(clientID, self.usensor[i], -1, sim.simx_opmode_blocking)
 
-        return State, Point, srot, np.linalg.norm(Point)
+        return self.state, Point, srot, math.sqrt(sum(i**2 for i in Point)) #np.linalg.norm(Point)
 
     def Position (self):
-        ret, carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
+        ret, self.carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
         ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
-        xw = carpos[0]
-        yw = carpos[1]
-        return xw, yw, carpos, carrot
+        xw = self.carpos[0]
+        yw = self.carpos[1]
+        return xw, yw, self.carpos, carrot
     
-    def Velocity(self, ul, ur):
-        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, ul, sim.simx_opmode_blocking)
-        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, ur, sim.simx_opmode_blocking)
+    def Velocity(self, vLeft, vRight):
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, vLeft, sim.simx_opmode_blocking)
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, vRight, sim.simx_opmode_blocking)
 
     def stop(self):
         err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, 0, sim.simx_opmode_blocking)
@@ -152,7 +172,7 @@ class Robot():
             j_prime += 1
         return new_map
 
-    def interp(self, tiempo):
+    def interp(self, tiempo, pcix, pciy):
 
 
         """ Interpolador Pchip """"" 
@@ -174,36 +194,111 @@ class Robot():
 
         return {'x':xnew,'y':ynew}
 
-    def Trajectory(self):
+    def Follow(self, CorrX, CorrY):
+        
+        tarr = np.linspace(0, 1000, CorrX.shape[0])
+        ExpX = spi.PchipInterpolator(tarr, CorrX) 
+        ExpY = spi.PchipInterpolator(tarr, CorrY)
 
         ts = time.time()
 
-        x, y, carpos, carrot = self.Position() 
+        x, y, self.carpos, carrot = self.Position() 
 
         tau = ts - t
 
-        data = self.interp(tau)
+        data = self.interp(tau, ExpX, ExpY)
         xd = data['x']
         yd = data['y']
 
-        errp = m.sqrt((xd-carpos[0])**2 + (yd-carpos[1])**2)
-        angd = m.atan2(yd-carpos[1], xd-carpos[0])
+        errp = m.sqrt((xd-self.carpos[0])**2 + (yd-self.carpos[1])**2)
+        angd = m.atan2(yd-self.carpos[1], xd-self.carpos[0])
         errh = self.angdiff(carrot[2], angd)
 
         v = Kv*errp
         omega = Kh*errh
 
         ul = v/r - L*omega/(2*r)
+
         ur = v/r + L*omega/(2*r)
+    
+        """""
+        if ul > 20:
+            ul = ul - ((ul/100)*90)
+        if ur > 20:
+            ur = ur - ((ur/100)*90)
+        if ul > 10:
+            ul = ul - ((ul/100)*75)
+        if ur > 10:
+            ur = ur - ((ur/100)*75)
+        if ul > 8:
+            ul = ul - ((ul/100)*60)
+        if ur > 8:
+            ur = ur - ((ur/100)*60)
+        if ul > 5:
+            ul = ul - ((ul/100)*50)
+        """
 
-        xt.append(carpos[0])
-        yt.append(carpos[1])
+        xt.append(self.carpos[0])
+        yt.append(self.carpos[1])
 
-        self.Velocity(ul,ur)
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, ul, sim.simx_opmode_blocking)
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, ur, sim.simx_opmode_blocking)
+
+    def Trajectory(self):
+        
+        CorrX, CorrY = Traject.astra(self.path)
+ 
+        #Traject.Grafica(CorrX, CorrY)
+ 
+        self.Follow(CorrX,CorrY)
+ 
+        """""
+        if (time.time()-t) < 30 and self.Explore1 == False:
+            CorrX, CorrY = Traject.Exp1()
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+            print('Estado 1')
+        elif self.Explore1 == False: 
+            self.Explore1 = True
+            self.AjusteTiempo = self.AjusteTiempo + 70
+        elif (time.time()-t) < 60 and self.Explore2 == False:
+            CorrX, CorrY = Traject.ORG(self.carpos)
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+            print('Regresando')
+        elif (time.time()-t) < 90 and self.Explore2 == False:
+            CorrX, CorrY = Traject.Exp2()
+            #Traject.Grafica(CorrX, CorrY)
+            print('Estado 2')
+            self.Follow(CorrX,CorrY)
+        elif self.Explore2 == False:
+            self.Explore2 = True
+            self.AjusteTiempo = self.AjusteTiempo + 50
+        elif (time.time()-t) < 120 and self.Explore3 == False:
+            CorrX, CorrY = Traject.ORG(self.carpos)
+            #Traject.Grafica(CorrX, CorrY)
+            print('Regresando')
+            self.Follow(CorrX,CorrY)
+        elif (time.time()-t) < 150 and self.Explore3 == False:
+            CorrX, CorrY = Traject.Exp3()
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+            print('Estado 3')
+        elif self.Explore3 == False:
+            self.Explore3 = True
+        elif (time.time()-t) < 180 and self.Explore4 == False:
+            CorrX, CorrY = Traject.ORG(self.carpos)
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+        elif (time.time()-t) < 210 and self.Explore4 == False:
+            CorrX, CorrY = Traject.Exp4()
+            #Traject.Grafica(CorrX, CorrY)
+            self.Follow(CorrX,CorrY)
+        """
         
     def Braitenberg (self):
 
-        xw, yw, carpos, carrot = self.Position()
+        xw, yw, self.carpos, carrot = self.Position()
 
         for i in range (16):
             dist = self.getDistanceReading(i)
@@ -221,19 +316,25 @@ class Robot():
             vLeft=vLeft+braitenbergL[i]*detect[i]
             vRight=vRight+braitenbergR[i]*detect[i]
         
-        xt.append(carpos[0])
-        yt.append(carpos[1])
+        xt.append(self.carpos[0])
+        yt.append(self.carpos[1])
 
-        return vLeft, vRight
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, vLeft, sim.simx_opmode_blocking)
+        err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, vRight, sim.simx_opmode_blocking)
 
     def LineS(self, xr, yr, row, col, i):
 
-        state, point, srot, dist = self.getSensorReading(i)
+        self.state, point, srot, dist = self.getSensorReading(i)     
         x, y, spos, carrot = self.Position()
         R = self.q2R(srot[0], srot[1], srot[2], srot[3])
         spos = np.array(spos).reshape((3,1))
+        #self.Dist.append(dist)
+        #self.State.append(self.state)
 
-        if state == True:
+        xt.append(spos[0])
+        yt.append(spos[1])
+
+        if self.state == True:
 
             opos = np.array(point).reshape((3,1))
                 
@@ -242,17 +343,14 @@ class Robot():
             ys = pobs[1]
             xo = self.CXo + m.ceil(xs/self.SizeGrid) + self.IncX
             yo = self.CXo - m.floor(ys/self.SizeGrid) + self.IncY
+
             if xo >= col:
                 xo = xr
-                yo = yr
             elif xo <= 0:
                 xo = xr
-                yo = yr 
             if yo >= row:
                 yo = yr
-                xo = xr
             elif yo <=0:
-                xo = xr
                 yo = yr
                 
             rows, cols = line(yr-1, xr-1, yo-1, xo-1)
@@ -272,15 +370,11 @@ class Robot():
 
             if xo >= col:
                 xo = xr
-                yo = yr
             elif xo <= 0:
                 xo = xr
-                yo = yr 
             if yo >= row:
                 yo = yr
-                xo = xr
             elif yo <=0:
-                xo = xr
                 yo = yr
 
             rows, cols = line(yr-1, xr-1, yo-1, xo-1)  
@@ -288,69 +382,128 @@ class Robot():
 
     def Mapeo(self):
     
-        xw, yw, carpos, carrot = self.Position()
+        xw, yw, self.carpos, carrot = self.Position()
 
-        xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
-        yr = self.CYo - m.floor(yw/self.SizeGrid)  + self.IncY 
+        xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX           # Obtenemos la posicion en X de nuestro robot de acuerdo al marco global
+        yr = self.CYo - m.floor(yw/self.SizeGrid)  + self.IncY         # Obtenemos la posicion en y de nuestro robot de acuerdo al marco global
 
-        row, col = self.occgrid.shape       
+        row, col = self.occgrid.shape                                  # Contamos el maximo de columnas y filas con el que disponemos
 
-        if xr >= col:
-            print('Agregando columnas al final')
-            for i in range(MAPZISE):
+        if xr >= col:                                                  # Comprobamos si la posicion en X postiva se puede graficar en nuestra matriz
+            print('Agregando columnas al final')                       # En caso de ser cierta la comprobacion, agregamos columnas al final de nuestras matrices 
+            for i in range(self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=1)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 1)
-            xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
-        elif xr <= 0:
-            print('Agregando columnas al inicio')
-            for i in range(MAPZISE):
+        elif xr <= 0:                                                  # Comprobamos si la posicion en X es negativa y por lo tanto saldria de los limites de nuestra matriz
+            print('Agregando columnas al inicio')                      # En caso de ser cierta la comprobacion, agregamos columnas al inicio de nuestras matrices 
+            for i in range(self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, 0, .5, axis=1)
                 self.tocc = np.insert(self.tocc, 0, 0, axis = 1)
-            self.IterIX = self.IterIX + 1
-            self.IncX = self.IterIX * MAPZISE
-            xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX
+            self.IncX = self.IncX + self.MAPSIZE                       # En este caso estaremos guardando el incremento en X para mantener nuestro marco global
+            xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX       # Volvemos a obtener las cordenadaS en X en nuestro nuevo marco global ampliado
             
-        if yr >= row:
-            print('Insertando filas al final')
-            for i in range(MAPZISE):
+        if yr >= row:                                                  # Comprobamos si la posicion en Y postiva se puede graficar en nuestra matriz
+            print('Insertando filas al final')                         # En caso de ser cierta la comprobacion, agregamos filas al final de nuestras matrices
+            for i in range (self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, -1, .5, axis=0)
                 self.tocc = np.insert(self.tocc, -1, 0, axis = 0)
-            yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
-        elif yr <= 0:
+        elif yr <= 0:                                                  # Comprobamos si la posicion en Y es negativa y por lo tanto saldria de los limites de nuestra matriz
             print('Insertando filas al inicio')
-            for i in range(MAPZISE):
+            for i in range(self.MAPSIZE):
                 self.occgrid = np.insert(self.occgrid, 0, .5, axis=0)
                 self.tocc = np.insert(self.tocc, 0, 0, axis = 0)
-            self.IterIY = self.IterIY + 1
-            self.IncY = self.IterIY * MAPZISE
-            yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY
+            self.IncY = self.IncY + self.MAPSIZE                       # En este caso estaremos guardando el incremento en Y para mantener nuestro marco global
+            yr = self.CYo - m.floor(yw/self.SizeGrid) + self.IncY      # Volvemos a obtener las cordenadaS en X en nuestro nuevo marco global ampliado
             
-        row, col = self.occgrid.shape
-        
-        self.occgrid[yr-1, xr-1] = 0
+        self.occgrid[yr-1, xr-1] = 0                                   # Mandamos los valores donde se encuentra el robot como celdas ocupadas
 
-        for i in range(16):
+        row, col = self.occgrid.shape                                  # Volvemos a leer el tamaños de nuestras matrices por si hubo cambios y enviarlos a nuestra funcion Line Sensors
+
+        self.Dist = []
+        self.State = []
+
+        xt.append(self.carpos[0])
+        yt.append(self.carpos[1])
+
+        for i in range(16):                                            # En un rango de 15 sensores graficamos lo que detecta cada uno de ellos
             self.LineS(xr,yr,row,col, i)
-        
-        #ul = 2.0
-        # ur = 1.0*espiral[cont]
-        
-        ur = UR
-        ul = UL
+
+        """""
+        ul = 2.0
+        ur = 2.0
 
         for i in range(16):
-            if self.getDistanceReading(i) < 2.5:
-                ul, ur = self.Braitenberg()
+            if self.State[i]:
+                dist = self.getDistanceReading(i)
+                if dist<noDetectionDist:
+                    if dist<maxDetectionDist:
+                        dist=maxDetectionDist
+                    detect[i]=1-((dist-maxDetectionDist)/(noDetectionDist-maxDetectionDist))
+                else:
+                    detect[i]=0
+                    
+                ul=ul+braitenbergL[i]*detect[i]
+                ur=ur+braitenbergR[i]*detect[i]
 
         self.Velocity(ul,ur)
-       
+        """""
+    def GetMap_Trayectory(self):
+        # if os.path.exists('Mapa-espiral.txt'):
+        #     print('Map found. Loading...')
+        #     occgrid = np.loadtxt('Mapa-espiral.txt')
+        #     tocc = 1.0*(occgrid > 0.5)
+        #     occgrid[occgrid > 0.5] = 0
+        #     maze = tocc    
+        #     tam = np.shape(occgrid)
+        #     self.CXo = int(tam[0]/2)
+        #     self.CYo = int(tam[0]/2)
+        #     self.SizeGrid = SizeG
+        #     self.IncX = 0
+        #     self.IncY = 0
+        
+        if os.path.exists('Mapa.npz'):
+            print('Mapa encontrado. Cargando...')
+            MAPA = np.load('Mapa.npz')
+            self.occgrid = MAPA['occgrid']                  # Cargamos la matriz con los valores de las celdas vacias
+            self.tocc = MAPA['tocc']                        # Cargamos la matriz con los valores de las celdas ocupadas
+            ConfigR = MAPA['Conf']
+
+            
+            self.IncX = int(ConfigR[0])                     # Cargamos el incremento en X para la transformación de coordenadas
+            self.IncY = int(ConfigR[1])                     # Cargamos el incremento en y para la transformacion de coordenadas
+            self.SizeGrid = ConfigR[2]                      # Cargamos el tamaño de rejilla preestablecido en el mapa
+            self.MAPSIZE = int(ConfigR[3])            
+            maze = self.tocc
+            
+        plt.imshow(maze, cmap='gray')
+        plt.show()
+        
+        kernel = np.ones((8,8),np.uint8)
+        
+        mazed = cv2.dilate(maze,kernel,iterations = 1)
+        
+        plt.imshow(mazed, cmap='gray')
+        plt.show()
+        
+        xw, yw, self.carpos, carrot = self.Position()
+
+        xr = self.CXo + m.ceil(xw/self.SizeGrid) + self.IncX           # Obtenemos la posicion en X de nuestro robot de acuerdo al marco global
+        yr = self.CYo - m.floor(yw/self.SizeGrid)  + self.IncY         # Obtenemos la posicion en y de nuestro robot de acuerdo al marco global
+        
+        start = (xr,yr)
+        end = (120,61)
+        
+        self.path = ast.astar(mazed.tolist(), start, end, allow_diagonal_movement=True)
+        print(self.path)
+        
+
+        
     def Finaly(self):
         plt.imshow(self.tocc+self.occgrid, cmap='gray')
         plt.show()
-        Config = [int(self.IncX),int(self.IncY),int(self.IterIX),int(self.IterIY),(self.SizeGrid)]
-        np.savez('Mapa', tocc = self.tocc, occgrid = self.occgrid, Conf = Config)
+        Config = [self.IncX,self.IncY,self.SizeGrid,self.MAPSIZE]                   # Definimos nuestra matriz con las configuraciones a guardar
+        np.savez('Mapa', tocc = self.tocc, occgrid = self.occgrid, Conf = Config)   # Guardamos en un archivo ".npz" nuestras matrices
 
-    
 print ('Programa Iniciado')
 sim.simxFinish(-1)
 clientID=sim.simxStart('127.0.0.1',-1,True,True,5000,5)  # Conexión a CoppeliaSim
@@ -368,36 +521,34 @@ if clientID!=-1:
     detect = np.zeros(16)
     braitenbergL=[-0.2,-0.4,-0.6,-0.8,-1,-1.2,-1.4,-1.6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
     braitenbergR=[-1.6,-1.4,-1.2,-1,-0.8,-0.6,-0.4,-0.2, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-
-   
+    
+    
+    
     xt = []
     yt = []
-    v = 1
-    teta = np.pi/6
-    ttime =  END
-    tarr = np.linspace(0, ttime, xarr.shape[0])
-    pcix = spi.PchipInterpolator(tarr, xarr) 
-    pciy = spi.PchipInterpolator(tarr, yarr)
     
-    t = time.time()
-    s = 5
-    #                                        """ Ciclo de trabajo"""""
-    init = np.random.randint(80, 200)
-    v = init/100
-    while (time.time()-t) < END:
 
-        UR, UL = v2u(v, teta, r, L)
-        UR /= 2.1
-        UL /= 2.1
-        robot.Mapeo()       
-        if time.time()-t >= s: 
-            s += 5     
-            teta -= 0.01 
-        
+    ttime =  END
+
+
+    t = time.time()
+    robot.GetMap_Trayectory()
+    #                                        """ Ciclo de trabajo """
+
+    while (time.time()-t) < END:
+        # for i in range (8):
+        #     while robot.getDistanceReading(i) <= 1:       # Comprobamos si algun sensor detecta un objeto
+        #         robot.Braitenberg() 
+        #         robot.Mapeo()                             # Usamos la funcion Braitenberg para evadir objetos
+        #         print ("Evadiendo obstaculo")
+        robot.Trajectory()
+        #robot.Velocity(3,3)
+        #robot.Mapeo()                                     # El robot seguira la trayectoria hasta encontrar un objeto
+        print ("Siguiendo Trayectoria") 
                             
-    robot.stop()                                         # Detenemos nuestro robot
-    #Traject.GrafOut(xt,yt,xorg,yorg)                     # Imprimimos resultados
-    robot.Finaly()
+    robot.stop()                                          # Detenemos nuestro robot
+    Traject.GrafOut(xt,yt)                                # Imprimimos resultados
+    #robot.Finaly()
 
     
     sim.simxGetPingTime(clientID)                        # Desconectamos del Remote Api para finalizar el programa
