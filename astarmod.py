@@ -12,7 +12,7 @@ from warnings import warn
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy 
-import cv2 
+import cv2
 
 
 class Node:
@@ -174,18 +174,24 @@ def path2cells(path):
         rows.append(p[0])
         cols.append(p[1])
     return rows, cols
-def getTrajectoryA(tocc,occgrid,start,end):
-   
-    maze = tocc + occgrid 
-    maze[maze == 0.5] = 0
-    kernel = np.ones((5,5),np.uint8)
-    mazed = cv2.dilate(maze,kernel,iterations = 1)
-    
-    plt.imshow(mazed, cmap='gray')
-    plt.title('Dilatado')
-    plt.savefig('Mapa dilato.png')
 
-    list_m = mazed.tolist()
+def Dilatacion(Mapa):
+    
+    #Mapa[maze == 0.5] = 0
+
+    kernel = np.ones((8,8),np.uint8)
+    MapaD = cv2.dilate(Mapa,kernel,iterations = 1)
+    
+    plt.imshow(MapaD, cmap='gray')
+    plt.title('Dilatado')
+    plt.savefig('Mapa dilatado.png')
+    
+
+    return MapaD
+
+def getTrajectoryA(MapaD,start,end):
+    
+    list_m = MapaD.tolist()
     path = astar(list_m, start, end, allow_diagonal_movement=True)
     path_cords = path2cells(path)
 

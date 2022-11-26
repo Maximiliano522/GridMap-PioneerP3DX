@@ -315,9 +315,10 @@ def GrafOut1(xarr, yarr, xorg, yorg):
     mpl.show()
 
 def GrafOut(xarr, yarr):
-    
+    #fig, ax = mpl.subplots()
     mpl.scatter(xarr,yarr, label ='Trayectoria seguida por el robot')
-    mpl.scatter(0,0, label = 'Centro', color = 'red')
+    #mpl.scatter(0,0, label = 'Centro', color = 'red')
+    #ax.invert_yaxis()
     mpl.scatter(xarr[0],yarr[0], label = 'Punto inicial', color = 'black')
     mpl.title('TRAYECTORIA CONSEGUIDA')
     mpl.xlabel('X', loc = 'right')

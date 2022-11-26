@@ -9,7 +9,7 @@ import numpy as np
 import scipy.interpolate as spi
 import trajectory as Traject
 from skimage.draw import line
-from astarmod import getTrajectoryA
+import astarmod
 import matplotlib.pyplot as plt
 import os
 
@@ -18,7 +18,11 @@ import os
 Kv = .2                                    # Constantes de aceleración
 Kh = .5
                                             
-END = 120                                  # TIEMPO
+END = 200                                # TIEMPO
+Ttime = 200
+
+X = 8
+Y = -8
                                             
 MAPSIZE = 50                               # Tamaño de Mapa inicial
                                             
@@ -62,8 +66,54 @@ class Robot():
         ret, self.carpos = sim.simxGetObjectPosition(clientID, self.robot, -1, sim.simx_opmode_blocking)
         ret, carrot = sim.simxGetObjectOrientation(clientID, self.robot, -1, sim.simx_opmode_blocking)
 
+        if os.path.exists('MapaD.npz'):
+            print('Mapa encontrado. Cargando...')
+            MAPA = np.load('MapaD.npz')
+            self.Mapa = MAPA['Mapa']
+            self.MapaD = MAPA['MapaD']
+            self.CorrX = MAPA['CorrX']
+            self.CorrY = MAPA['CorrY']
+            self.XORG = MAPA['XORG']
+            self.YORG = MAPA['YORG']
+            plt.imshow(self.Mapa, cmap='gray')
+            plt.title('Mapa Original')
+            plt.show()
+            plt.imshow(self.MapaD, cmap='gray')
+            plt.title('Mapa Dilatado') 
+            plt.show()                
+            self.T = True
+            self.MAPSIZE = int(MAPSIZE)
+            self.SizeGrid = SizeG
+            self.IncX = 200                                   # Establecemos los valores iniciales por default
+            self.IncY = 200
+            self.TXT = False       
+        elif os.path.exists('Mapa.txt'):
+            print('\nMapa.txt encontrado. Cargando...')
+            self.occgrid = np.loadtxt('Mapa.txt')
+            self.tocc = 1.0*(self.occgrid > 0.5)
+            self.occgrid[self.occgrid > 0.5] = 0
+            self.tocc = np.rot90(self.tocc)
+            self.occgrid = np.rot90(self.occgrid)
+            self.Mapa = self.occgrid + self.tocc
+            plt.imshow(self.Mapa, cmap='gray')
+            plt.title('Mapa Original')
+            plt.show()
+            print("\nDilatando Mapa...\n")
+            self.MapaD = astarmod.Dilatacion(self.Mapa)
+            plt.imshow(self.MapaD, cmap='gray')
+            plt.title('Mapa Dilatado')
+            plt.show()
+            self.MAPSIZE = int(MAPSIZE)
+            self.SizeGrid = SizeG
+            self.IncX = 200                                   # Establecemos los valores iniciales por default
+            self.IncY = 200
+            self.TXT = True
+            self.T = False
+            self.XORG = self.carpos[0]
+            self.YORG = self.carpos[1]
 
-        if os.path.exists('Mapa.npz'):
+            """""
+        elif os.path.exists('Mapa.npz'):
             print('Mapa encontrado. Cargando...')
             MAPA = np.load('Mapa.npz')
             self.occgrid = MAPA['occgrid']                  # Cargamos la matriz con los valores de las celdas vacias
@@ -85,22 +135,12 @@ class Robot():
             self.IncY = 0
             self.MAPSIZE = int(MAPSIZE)
 
-            """""
-            self.TimeTra = 0
-            self.Explore1 = False
-            self.Explore2 = False
-            self.Explore3 = False
-            self.Explore4 = False
-            self.Explore5 = False
-            self.Explore6 = False
-            self.Explore7 = False
-            self.Explore8 = False
-            self.AjusteTiempo = 0
-
             """
 
         self.CXo = int(self.MAPSIZE/2)                       # Centro original en x
-        self.CYo = int(self.MAPSIZE/2)                       # Centro original en Y
+        self.CYo = int(self.MAPSIZE/2)  
+        self.xt = []
+        self.yt = []                     # Centro original en Y
  
     def getDistanceReading(self, i):
         # Obtenemos la lectura del sensor
@@ -191,7 +231,7 @@ class Robot():
 
     def Follow(self, CorrX, CorrY):
         
-        tarr = np.linspace(0, 1000, CorrX.shape[0])
+        tarr = np.linspace(0, Ttime, CorrX.shape[0])
         ExpX = spi.PchipInterpolator(tarr, CorrX) 
         ExpY = spi.PchipInterpolator(tarr, CorrY)
 
@@ -233,81 +273,41 @@ class Robot():
             ul = ul - ((ul/100)*50)
         """
 
-        xt.append(self.carpos[0])
-        yt.append(self.carpos[1])
+        self.xt.append(self.carpos[0])
+        self.yt.append(self.carpos[1])
 
         err = sim.simxSetJointTargetVelocity(clientID, self.motor_l, ul, sim.simx_opmode_blocking)
         err = sim.simxSetJointTargetVelocity(clientID, self.motor_r, ur, sim.simx_opmode_blocking)
-
-    def Trajectory(self):
-        
+    
+    def CreatedT(self):
         print("Creando la trajectoria a seguir")
         #Traject.Grafica(CorrX, CorrY) 
-        start = [0,0]
-        end = [6,6] 
+        x, y, position, carrot = self.Position()
+        start = [x,y]
+        end = [X,Y] 
 
 
-        start[0] = self.CXo + m.ceil(start[0]/self.SizeGrid) + self.IncX
-        start[1] = self.CXo - m.floor(start[1]/self.SizeGrid) + self.IncY 
+        start[0] = int(250/2) + m.ceil(start[0]/self.SizeGrid)
+        start[1] = int(250/2) + m.floor(start[1]/self.SizeGrid) 
         
-        end[0] = self.CXo + m.ceil(end[0]/self.SizeGrid) + self.IncX
-        end[1] = self.CXo - m.floor(end[1]/self.SizeGrid) + self.IncY 
+        end[0] = int(250/2) + m.ceil(end[0]/self.SizeGrid) 
+        end[1] = int(250/2) + m.floor(end[1]/self.SizeGrid)
         
         print(start)
         print(end)
-        CorrX, CorrY = getTrajectoryA(self.tocc,self.occgrid,start,end) 
-        CorrX = np.array(CorrX)
-        CorrY = np.array(CorrY)
-       
-        
-        print(CorrX)
-        print(CorrY)
-        self.Follow(CorrX,CorrY)
 
-        """""
-        if (time.time()-t) < 30 and self.Explore1 == False:
-            CorrX, CorrY = Traject.Exp1()
-            #Traject.Grafica(CorrX, CorrY)
-            self.Follow(CorrX,CorrY)
-            print('Estado 1')
-        elif self.Explore1 == False: 
-            self.Explore1 = True
-            self.AjusteTiempo = self.AjusteTiempo + 70
-        elif (time.time()-t) < 60 and self.Explore2 == False:
-            CorrX, CorrY = Traject.ORG(self.carpos)
-            #Traject.Grafica(CorrX, CorrY)
-            self.Follow(CorrX,CorrY)
-            print('Regresando')
-        elif (time.time()-t) < 90 and self.Explore2 == False:
-            CorrX, CorrY = Traject.Exp2()
-            #Traject.Grafica(CorrX, CorrY)
-            print('Estado 2')
-            self.Follow(CorrX,CorrY)
-        elif self.Explore2 == False:
-            self.Explore2 = True
-            self.AjusteTiempo = self.AjusteTiempo + 50
-        elif (time.time()-t) < 120 and self.Explore3 == False:
-            CorrX, CorrY = Traject.ORG(self.carpos)
-            #Traject.Grafica(CorrX, CorrY)
-            print('Regresando')
-            self.Follow(CorrX,CorrY)
-        elif (time.time()-t) < 150 and self.Explore3 == False:
-            CorrX, CorrY = Traject.Exp3()
-            #Traject.Grafica(CorrX, CorrY)
-            self.Follow(CorrX,CorrY)
-            print('Estado 3')
-        elif self.Explore3 == False:
-            self.Explore3 = True
-        elif (time.time()-t) < 180 and self.Explore4 == False:
-            CorrX, CorrY = Traject.ORG(self.carpos)
-            #Traject.Grafica(CorrX, CorrY)
-            self.Follow(CorrX,CorrY)
-        elif (time.time()-t) < 210 and self.Explore4 == False:
-            CorrX, CorrY = Traject.Exp4()
-            #Traject.Grafica(CorrX, CorrY)
-            self.Follow(CorrX,CorrY)
-        """
-        
+        self.CorrXM, self.CorrYM = astarmod.getTrajectoryA(self.MapaD,start,end) 
+        self.CorrX = ((np.array(self.CorrXM)/10) - 12.5)
+        self.CorrY = ((np.array(self.CorrYM)/10) - 12.5)
+       
+        Traject.Grafica(self.CorrX, self.CorrY) 
+       
+        print("\nTrayectoria creada satisfactoriamente")
+
+    def Trajectory(self):
+
+        self.Follow(self.CorrX,self.CorrY)
+
     def Braitenberg (self):
 
         xw, yw, self.carpos, carrot = self.Position()
@@ -461,10 +461,21 @@ class Robot():
         """""
        
     def Finaly(self):
+        if self.TXT == True:
+            plt.imshow((np.flip(self.MapaD,0)), cmap='gray', origin = 'lower')
+            Traject.Grafica(((self.CorrX*10)+125), ((self.CorrY*10)+125))
+            np.savez('MapaD', Mapa = self.Mapa, MapaD = self.MapaD, CorrX = self.CorrX, CorrY = self.CorrY, XORG = self.XORG, YORG = self.YORG)
+        else:
+            plt.imshow((np.flip(self.MapaD,0)), cmap='gray', origin = 'lower')
+            self.xt = (np.array(self.xt)*10) + 125
+            self.yt = (np.array(self.yt)*10) + 125
+            Traject.GrafOut(self.xt,self.yt)
+        """
         plt.imshow(self.tocc+self.occgrid, cmap='gray')
         plt.show()
         Config = [self.IncX,self.IncY,self.SizeGrid,self.MAPSIZE]                   # Definimos nuestra matriz con las configuraciones a guardar
         np.savez('Mapa', tocc = self.tocc, occgrid = self.occgrid, Conf = Config)   # Guardamos en un archivo ".npz" nuestras matrices
+        """
 
 print ('Programa Iniciado')
 sim.simxFinish(-1)
@@ -483,31 +494,24 @@ if clientID!=-1:
     detect = np.zeros(16)
     braitenbergL=[-0.2,-0.4,-0.6,-0.8,-1,-1.2,-1.4,-1.6, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
     braitenbergR=[-1.6,-1.4,-1.2,-1,-0.8,-0.6,-0.4,-0.2, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-
-    xt = []
-    yt = []
     
 
     ttime =  END
 
+    if robot.T == False:
+        robot.CreatedT()
+    else: 
 
-    t = time.time()
+        t = time.time()
 
-    #                                        """ Ciclo de trabajo """
-
-    while (time.time()-t) < END:
-        for i in range (8):
-            while robot.getDistanceReading(i) <= 1:       # Comprobamos si algun sensor detecta un objeto
-                robot.Braitenberg() 
-                robot.Mapeo()                             # Usamos la funcion Braitenberg para evadir objetos
-                print ("Evadiendo obstaculo")
-        robot.Trajectory()
-        #robot.Velocity(3,3)
-        robot.Mapeo()                                     # El robot seguira la trayectoria hasta encontrar un objeto
-        print ("Siguiendo Trayectoria") 
-                            
-    robot.stop()                                          # Detenemos nuestro robot
-    Traject.GrafOut(xt,yt)                                # Imprimimos resultados
+        #                                        """ Ciclo de trabajo """
+        print(robot.CorrX)
+        print(robot.CorrY)
+        Traject.Grafica(robot.CorrX, robot.CorrY)
+        while (time.time()-t) < END:
+            robot.Trajectory()        
+        robot.stop()                                          # Detenemos nuestro robot
+        #Traject.GrafOut(xt,yt)                                # Imprimimos resultados
     robot.Finaly()
 
     
